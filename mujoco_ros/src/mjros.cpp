@@ -722,7 +722,7 @@ void profilerupdate(void)
     int i, n;
 
     // update constraint figure
-    figconstraint.linepnt[0] = mjMIN(mjMIN(d->solver_iter, mjNSOLVER), mjMAXLINEPNT);
+    figconstraint.linepnt[0] = mjMIN(mjMIN(d->solver_niter[0], mjNSOLVER), mjMAXLINEPNT);
     for (i = 1; i < 5; i++)
         figconstraint.linepnt[i] = figconstraint.linepnt[0];
     if (m->opt.solver == mjSOL_PGS)
@@ -750,7 +750,7 @@ void profilerupdate(void)
     }
 
     // update cost figure
-    figcost.linepnt[0] = mjMIN(mjMIN(d->solver_iter, mjNSOLVER), mjMAXLINEPNT);
+    figcost.linepnt[0] = mjMIN(mjMIN(d->solver_niter[0], mjNSOLVER), mjMAXLINEPNT);
     for (i = 1; i < 3; i++)
         figcost.linepnt[i] = figcost.linepnt[0];
     if (m->opt.solver == mjSOL_PGS)
@@ -808,9 +808,9 @@ void profilerupdate(void)
         (float)m->nv,
         (float)m->nbody,
         (float)d->nefc,
-        (float)mju_sqrt((mjtNum)d->solver_nnz),
+        (float)mju_sqrt((mjtNum)d->solver_nnz[0]),
         (float)d->ncon,
-        (float)d->solver_iter};
+        (float)d->solver_niter[0]};
 
     // update figsize
     pnt = mjMIN(201, figsize.linepnt[0] + 1);
@@ -943,9 +943,9 @@ void infotext(char *title, char *content, double interval)
 
     // compute solver error
     mjtNum solerr = 0;
-    if (d->solver_iter)
+    if (d->solver_niter[0])
     {
-        int ind = mjMIN(d->solver_iter - 1, mjNSOLVER - 1);
+        int ind = mjMIN(d->solver_niter[0] - 1, mjNSOLVER - 1);
         solerr = mju_min(d->solver[ind].improvement, d->solver[ind].gradient);
         if (solerr == 0)
             solerr = mju_max(d->solver[ind].improvement, d->solver[ind].gradient);
@@ -974,11 +974,11 @@ void infotext(char *title, char *content, double interval)
             d->time, sim_time_now_ros.toSec(), sim_time_now_ros.toSec() - d->time,
             d->nefc, d->ncon,
             settings.run ? d->timer[mjTIMER_STEP].duration / mjMAX(1, d->timer[mjTIMER_STEP].number) : d->timer[mjTIMER_FORWARD].duration / mjMAX(1, d->timer[mjTIMER_FORWARD].number),
-            solerr, d->solver_iter,
+            solerr, d->solver_niter[0],
             1 / interval,
-            d->maxuse_stack / (double)d->nstack,
-            d->maxuse_con / (double)m->nconmax,
-            d->maxuse_efc / (double)m->njmax,
+            (double)d->maxuse_stack / (double)mjMAX(1, (int)d->narena),
+            d->maxuse_con / (double)mjMAX(1, (int)m->nconmax),
+            d->maxuse_efc / (double)mjMAX(1, (int)m->njmax),
             ctrlstat.c_str(),
             sim_cons_time);
 
@@ -1045,8 +1045,7 @@ void makephysics(int oldstate)
     mjuiDef defPhysics[] =
         {
             {mjITEM_SECTION, "Physics", oldstate, NULL, "AP"},
-            {mjITEM_SELECT, "Integrator", 2, &(m->opt.integrator), "Euler\nRK4"},
-            {mjITEM_SELECT, "Collision", 2, &(m->opt.collision), "All\nPair\nDynamic"},
+            {mjITEM_SELECT, "Integrator", 2, &(m->opt.integrator), "Euler\nRK4\nImplicit\nImplicitFast"},
             {mjITEM_SELECT, "Cone", 2, &(m->opt.cone), "Pyramidal\nElliptic"},
             {mjITEM_SELECT, "Jacobian", 2, &(m->opt.jacobian), "Dense\nSparse\nAuto"},
             {mjITEM_SELECT, "Solver", 2, &(m->opt.solver), "PGS\nCG\nNewton"},
@@ -1056,9 +1055,8 @@ void makephysics(int oldstate)
             {mjITEM_EDITNUM, "Tolerance", 2, &(m->opt.tolerance), "1 0 1"},
             {mjITEM_EDITINT, "Noslip Iter", 2, &(m->opt.noslip_iterations), "1 0 1000"},
             {mjITEM_EDITNUM, "Noslip Tol", 2, &(m->opt.noslip_tolerance), "1 0 1"},
-            {mjITEM_EDITINT, "MRR Iter", 2, &(m->opt.mpr_iterations), "1 0 1000"},
-            {mjITEM_EDITNUM, "MPR Tol", 2, &(m->opt.mpr_tolerance), "1 0 1"},
-            {mjITEM_EDITNUM, "API Rate", 2, &(m->opt.apirate), "1 0 1000"},
+            {mjITEM_EDITINT, "CCD Iter", 2, &(m->opt.ccd_iterations), "1 0 1000"},
+            {mjITEM_EDITNUM, "CCD Tol", 2, &(m->opt.ccd_tolerance), "1 0 1"},
             {mjITEM_SEPARATOR, "Physical Parameters", 1},
             {mjITEM_EDITNUM, "Gravity", 2, m->opt.gravity, "3"},
             {mjITEM_EDITNUM, "Wind", 2, m->opt.wind, "3"},
@@ -1116,9 +1114,9 @@ void makerendering(int oldstate)
             {mjITEM_SECTION, "Rendering", oldstate, NULL, "AR"},
             {mjITEM_SELECT, "Camera", 2, &(settings.camera), "Free\nTracking"},
             {mjITEM_SELECT, "Label", 2, &(vopt.label),
-             "None\nBody\nJoint\nGeom\nSite\nCamera\nLight\nTendon\nActuator\nConstraint\nSkin\nSelection\nSel Pnt\nForce"},
+             "None\nBody\nJoint\nGeom\nSite\nCamera\nLight\nTendon\nActuator\nConstraint\nFlex\nSkin\nSelection\nSel Pnt\nContact Pt\nContact Frc\nIsland"},
             {mjITEM_SELECT, "Frame", 2, &(vopt.frame),
-             "None\nBody\nGeom\nSite\nCamera\nLight\nWorld"},
+             "None\nBody\nGeom\nSite\nCamera\nLight\nContact\nWorld"},
             {mjITEM_SEPARATOR, "Model Elements", 1},
             {mjITEM_END}};
     mjuiDef defOpenGL[] =
@@ -1163,8 +1161,11 @@ void makerendering(int oldstate)
                 break;
             }
 
-        // set shortcut and data
-        sprintf(defFlag[0].other, " %s", mjVISSTRING[i][2]);
+        // set shortcut and data (only if shortcut string is non-empty)
+        if (mjVISSTRING[i][2] && mjVISSTRING[i][2][0])
+            sprintf(defFlag[0].other, " %s", mjVISSTRING[i][2]);
+        else
+            defFlag[0].other[0] = '\0';
         defFlag[0].pdata = vopt.flags + i;
         mjui_add(&ui0, defFlag);
     }
@@ -1172,7 +1173,11 @@ void makerendering(int oldstate)
     for (i = 0; i < mjNRNDFLAG; i++)
     {
         strcpy(defFlag[0].name, mjRNDSTRING[i][0]);
-        sprintf(defFlag[0].other, " %s", mjRNDSTRING[i][2]);
+        // set shortcut and data (only if shortcut string is non-empty)
+        if (mjRNDSTRING[i][2] && mjRNDSTRING[i][2][0])
+            sprintf(defFlag[0].other, " %s", mjRNDSTRING[i][2]);
+        else
+            defFlag[0].other[0] = '\0';
         defFlag[0].pdata = scn.flags + i;
         mjui_add(&ui0, defFlag);
     }
@@ -1899,12 +1904,12 @@ void uiEvent(mjuiState *state)
             // find geom and 3D click point, get corresponding body
             mjrRect r = state->rect[3];
             mjtNum selpnt[3];
-            int selgeom, selskin;
+            int selgeom[1], selflex[1], selskin[1];
             int selbody = mjv_select(m, d, &vopt,
                                      (mjtNum)r.width / (mjtNum)r.height,
                                      (mjtNum)(state->x - r.left) / (mjtNum)r.width,
                                      (mjtNum)(state->y - r.bottom) / (mjtNum)r.height,
-                                     &scn, selpnt, &selgeom, &selskin);
+                                     &scn, selpnt, selgeom, selflex, selskin);
 
             // set lookat point, start tracking is requested
             if (selmode == 2 || selmode == 3)
@@ -1934,7 +1939,7 @@ void uiEvent(mjuiState *state)
                 {
                     // record selection
                     pert.select = selbody;
-                    pert.skinselect = selskin;
+                    pert.skinselect = selskin[0];
 
                     // compute localpos
                     mjtNum tmp[3];
@@ -2044,10 +2049,7 @@ void makeArrow(mjvGeom* arrow)
 	arrow->objtype = mjOBJ_SITE;
 	arrow->objid = -1;
 	arrow->category = mjCAT_DECOR;
-	arrow->texid = -1;
-	arrow->texuniform = 0;
-	arrow->texrepeat[0] = 1;
-	arrow->texrepeat[1] = 1;
+	arrow->matid = -1;
 	arrow->emission = 0;
 	arrow->specular = 0.5;
 	arrow->shininess = 0.5;
@@ -2328,6 +2330,15 @@ void simulate(void)
 // initalize everything
 void init()
 {
+    // load all plugins from MUJOCO_PLUGIN_DIR (includes stl_decoder, obj_decoder, sdf_plugin, etc.)
+#ifdef MUJOCO_PLUGIN_DIR
+    mj_loadAllPluginLibraries(
+        MUJOCO_PLUGIN_DIR,
+        [](const char* filename, int first, int count) {
+            // printf("Loaded MuJoCo plugin: %s (%d plugin(s))\n", filename, count);
+        });
+#endif
+
     // print version, check compatibility
     printf("MuJoCo Pro version %.2lf\n", 0.01 * mj_version());
     if (mjVERSION_HEADER != mj_version())
@@ -2371,6 +2382,7 @@ void init()
 
     // custum init option
     vopt.geomgroup[2] = false;
+    vopt.geomgroup[3] = true;
 
     profilerinit();
     sensorinit();

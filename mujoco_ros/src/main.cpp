@@ -79,8 +79,10 @@ void loadmodel(void)
     mj_forward(m, d);
 
     ros_sim_started = true;
-    ctrl_command = mj_stackAlloc(d, (int)m->nu);
-    ctrl_command2 = mj_stackAlloc(d, (int)(m->nbody * 6));
+    delete[] ctrl_command;
+    delete[] ctrl_command2;
+    ctrl_command = new mjtNum[m->nu]();
+    ctrl_command2 = new mjtNum[m->nbody * 6]();
 
     // re-create scene and context
     mjv_makeScene(m, &scn, maxgeom);
@@ -239,6 +241,10 @@ int main(int argc, char **argv)
     mj_deleteModel(m);
     mjv_freeScene(&scn);
     mjr_freeContext(&con);
+    delete[] ctrl_command;
+    delete[] ctrl_command2;
+    ctrl_command = nullptr;
+    ctrl_command2 = nullptr;
 
     // deactive MuJoCo
     // mj_deactivate();

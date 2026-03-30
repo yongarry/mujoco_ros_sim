@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(mujoco_ros)
 
-add_compile_options(-Ofast -std=c++11)
+add_compile_options(-Ofast -std=c++17)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
@@ -16,7 +16,9 @@ IF(tocabi_lib_FOUND)
    ADD_DEFINITIONS(-DCOMPILE_SHAREDMEMORY)
 ENDIF()
 
-set(MUJOCO_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../mujoco210)
+set(MUJOCO_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../mujoco-3.6.0)
+set(MUJOCO_PLUGIN_DIR ${MUJOCO_PATH}/bin/mujoco_plugin)
+add_definitions(-DMUJOCO_PLUGIN_DIR="${MUJOCO_PLUGIN_DIR}")
 
 message("MuJoCo path: " ${MUJOCO_PATH})
 
@@ -32,19 +34,15 @@ include_directories(
   ${EIGEN3_INCLUDE_DIRS}
 )
 
-link_directories(
-  ${MUJOCO_PATH}/bin
-)
-
 IF(tocabi_lib_FOUND)
 include_directories(
   ${tocabi_lib_INCLUDE_DIRS}
 )
 ENDIF()
 
-file(GLOB LIB_MUJOCO ${MUJOCO_PATH}/bin/libmujoco210.so)
+file(GLOB LIB_MUJOCO ${MUJOCO_PATH}/lib/libmujoco.so)
 
-file(GLOB UI_SRC "${MUJOCO_PATH}/include/uitools.c")
+file(GLOB UI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/include/uitools.c")
 
 add_library(mujoco_ros_lib
     ${UI_SRC}
@@ -59,11 +57,7 @@ target_link_libraries(mujoco_ros
    ${catkin_LIBRARIES}
    ${LIB_MUJOCO}
    GL
-   #GLU 
-   #glut
-   
-   ${MUJOCO_PATH}/bin/libglew.so
-   ${MUJOCO_PATH}/bin/libglfw.so.3
+   glfw
  )
 
 add_dependencies(mujoco_ros_lib ${catkin_EXPORTED_TARGETS})

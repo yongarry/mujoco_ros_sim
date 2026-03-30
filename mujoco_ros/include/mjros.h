@@ -2,7 +2,8 @@
 #define _MJROS_H
 
 //Mujoco include
-#include "mjxmacro.h"
+#include <mujoco/mujoco.h>
+#include <mujoco/mjxmacro.h>
 #include "uitools.h"
 #include "stdio.h"
 #include "string.h"
