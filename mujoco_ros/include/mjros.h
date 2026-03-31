@@ -57,6 +57,7 @@ mjvScene scn;
 mjvCamera cam;
 mjvOption vopt;
 mjvPerturb pert;
+int pending_newperturb = 0;
 mjvFigure figconstraint;
 mjvFigure figcost;
 mjvFigure figtimer;

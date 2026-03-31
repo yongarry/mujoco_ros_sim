@@ -186,6 +186,45 @@ int main(int argc, char **argv)
     sim_time_run = ros::Time::now();
     sim_time_now_ros = ros::Duration(0);
 
+    // // print version, check compatibility
+    // std::printf("MuJoCo version %s\n", mj_versionString());
+    // if (mjVERSION_HEADER!=mj_version()) {
+    //     mju_error("Headers and library have different versions");
+    // }
+    
+    // // scan for libraries in the plugin directory to load additional plugins
+    // scanPluginLibraries();
+    
+    // mjvCamera cam;
+    // mjv_defaultCamera(&cam);
+    
+    // mjvOption opt;
+    // mjv_defaultOption(&opt);
+    
+    // mjvPerturb pert;
+    // mjv_defaultPerturb(&pert);
+    
+    // // simulate object encapsulates the UI
+    // auto sim = std::make_unique<mj::Simulate>(
+    //     std::make_unique<mj::GlfwAdapter>(),
+    //     &cam, &opt, &pert, /* is_passive = */ false
+    // );
+    
+    // std::string model_file;
+    // if (nh.getParam("model_file", model_file))
+    // {
+    //     mju_strncpy(filename, model_file.c_str(), 1000);
+    //     settings.loadrequest = 2;
+    //     ROS_INFO("model is at %s", model_file.c_str());
+    // }
+    
+    // // start physics thread
+    // std::thread physicsthreadhandle(&PhysicsThread, sim.get(), filename);
+    
+    // // start simulation UI loop (blocking call)
+    // sim->RenderLoop();
+    // physicsthreadhandle.join();
+    
     // initialize everything
     init();
 

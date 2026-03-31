@@ -578,7 +578,8 @@ void mycontroller(const mjModel *m, mjData *d)
                 }
                 if (custom_ft_applied)
                 {
-                    mju_copy(d->xfrc_applied, ctrl_command2, m->nbody * 6);
+                    for (int i = 0; i < m->nbody * 6; i++)
+                        d->xfrc_applied[i] += ctrl_command2[i];
                 }
             }
 
@@ -1776,6 +1777,7 @@ void uiEvent(mjuiState *state)
             {
                 settings.run = 1 - settings.run;
                 pert.active = 0;
+                pending_newperturb = 0;
                 mjui_update(-1, -1, &ui0, state, &con);
             }
             break;
@@ -1883,11 +1885,13 @@ void uiEvent(mjuiState *state)
             else if (state->left)
                 newperturb = mjPERT_ROTATE;
 
-            // perturbation onset: reset reference
+            // perturbation onset: defer init to sim thread for thread safety
             if (newperturb && !pert.active)
-                mjv_initPerturb(m, d, &scn, &pert);
+                pending_newperturb = newperturb;
         }
-        pert.active = newperturb;
+
+        if (!newperturb)
+            pert.active = 0;
 
         // handle double-click
         if (state->doubleclick)
@@ -1955,6 +1959,7 @@ void uiEvent(mjuiState *state)
 
             // stop perturbation on select
             pert.active = 0;
+            pending_newperturb = 0;
         }
 
         return;
@@ -1965,6 +1970,7 @@ void uiEvent(mjuiState *state)
     {
         // stop perturbation
         pert.active = 0;
+        pending_newperturb = 0;
 
         return;
     }
@@ -2086,6 +2092,14 @@ void prepare(void)
     // no model: nothing to do
     if (!m)
         return;
+
+    // process pending perturbation init (deferred from mouse event for thread safety)
+    if (pending_newperturb)
+    {
+        mjv_initPerturb(m, d, &scn, &pert);
+        pert.active = pending_newperturb;
+        pending_newperturb = 0;
+    }
 
     // update scene
     mjv_updateScene(m, d, &vopt, &pert, &cam, mjCAT_ALL, &scn);
@@ -2267,6 +2281,11 @@ void simulate(void)
                 // record cpu time at start of iteration
                 double tmstart = ros::Time::now().toSec();
 
+                // clear old perturbations, apply new (once before stepping, like MuJoCo 3.6.0)
+                mju_zero(d->xfrc_applied, 6 * m->nbody);
+                mjv_applyPerturbPose(m, d, &pert, 0);
+                mjv_applyPerturbForce(m, d, &pert);
+
                 // out-of-sync (for any reason)
                 if (d->time < simsync || tmstart < cpusync || cpusync == 0 ||
                     mju_abs((d->time - simsync) - (tmstart - cpusync)) > syncmisalign)
@@ -2274,11 +2293,6 @@ void simulate(void)
                     // re-sync
                     cpusync = tmstart;
                     simsync = d->time;
-
-                    // clear old perturbations, apply new
-                    mju_zero(d->xfrc_applied, 6 * m->nbody);
-                    mjv_applyPerturbPose(m, d, &pert, 0); // move mocap bodies only
-                    mjv_applyPerturbForce(m, d, &pert);
 
                     // run single step, let next iteration deal with timing
                     mj_step(m, d);
@@ -2291,11 +2305,6 @@ void simulate(void)
                     while ((d->time - simsync) < (ros::Time::now().toSec() - cpusync) &&
                            (ros::Time::now().toSec() - tmstart) < refreshfactor / vmode.refreshRate)
                     {
-                        // clear old perturbations, apply new
-                        mju_zero(d->xfrc_applied, 6 * m->nbody);
-                        mjv_applyPerturbPose(m, d, &pert, 0); // move mocap bodies only
-                        mjv_applyPerturbForce(m, d, &pert);
-
                         // run mj_step
                         mjtNum prevtm = d->time;
                         mj_step(m, d);
@@ -2379,6 +2388,8 @@ void init()
     // init abstract visualization
     mjv_defaultCamera(&cam);
     mjv_defaultOption(&vopt);
+
+    mjv_defaultPerturb(&pert);
 
     // custum init option
     vopt.geomgroup[2] = false;
