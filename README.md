@@ -1,14 +1,14 @@
 # mujoco_ros_sim
 
-Simple connect between mujoco with ros. 
+Simple connect between mujoco with ros1. 
 
-Mujoco sends joint and sensor data via rostopic, and receives torque or position command data via rostopic.   
+Mujoco sends joint and sensor data via shared memory, and receives torque or position command data via shared memory.   
 
-mujoco is based on 2.1 // Mujoco is free now!
+mujoco is based on 3.6.0 // Mujoco is free now!
 
 position/torque command available
 
-※ubuntu 18.04 is recommended since graphical issue at 16.04
+※ubuntu >= 20.04 available
 
 ## Installation
 
@@ -20,11 +20,7 @@ with tocabi_ecat package, mujoco can send status , receive commands via shared m
 
 you can test mujoco_ros_sim with dyros_red or dyros_jet
 
-* [DYROS_RED](https://github.com/saga0619/dyros_red)
-* [DYROS_JET](https://github.com/psh117/dyros_jet)
-* [DYROS_TOCABI](https://github.com/saga0619/dyros_tocabi)
 * [DYROS_TOCABI_V2](https://github.com/saga0619/dyros_tocabi_v2)
-
 
 ## ROS TOPIC LIST
 ### Publisher 
