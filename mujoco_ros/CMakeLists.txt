@@ -5,6 +5,7 @@ add_compile_options(-Ofast -std=c++17)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  roslib
   std_msgs
   mujoco_ros_msgs
   eigen_conversions

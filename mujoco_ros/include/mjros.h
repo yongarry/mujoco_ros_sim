@@ -63,6 +63,9 @@ mjvFigure figcost;
 mjvFigure figtimer;
 mjvFigure figsize;
 mjvFigure figsensor;
+mjvFigure figcontactforce;
+mjvFigure figactionrate;
+mjvFigure figrobotpos;
 
 // OpenGL rendering and UI
 GLFWvidmode vmode;
@@ -119,6 +122,9 @@ struct setting_
 
     // rendering: need sync
     int camera = 0;
+
+    // custom performance graphs
+    int performance = 0;
 };
 
 setting_ settings;
@@ -259,6 +265,12 @@ void profilershow(mjrRect rect);
 void sensorinit(void);
 void sensorupdate(void);
 void sensorshow(mjrRect rect);
+void contactforceinit(void);
+void contactforceupdate(void);
+void contactforceshow(mjrRect rect);
+void actionrateinit(void);
+void actionrateupdate(void);
+void actionrateshow(mjrRect rect);
 void infotext(char *title, char *content, double interval);
 void printfield(char *str, void *ptr);
 void watch(void);

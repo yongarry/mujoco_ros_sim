@@ -31,6 +31,8 @@ void c_reset()
 
     profilerupdate();
     sensorupdate();
+    contactforceupdate();
+    actionrateupdate();
     updatesettings();
     if (use_shm)
     {
@@ -830,18 +832,17 @@ void profilerupdate(void)
 // show profiler figures
 void profilershow(mjrRect rect)
 {
+    int panelw = rect.width / 4;
+    int panelh = rect.height / 2;
+
     mjrRect viewport = {
-        rect.left + rect.width - rect.width / 4,
+        rect.left + rect.width - panelw,
         rect.bottom,
-        rect.width / 4,
-        rect.height / 4};
-    mjr_figure(viewport, &figtimer, &con);
-    viewport.bottom += rect.height / 4;
-    mjr_figure(viewport, &figsize, &con);
-    viewport.bottom += rect.height / 4;
-    mjr_figure(viewport, &figcost, &con);
-    viewport.bottom += rect.height / 4;
-    mjr_figure(viewport, &figconstraint, &con);
+        panelw,
+        panelh};
+    mjr_figure(viewport, &figcontactforce, &con);
+    viewport.bottom += panelh;
+    mjr_figure(viewport, &figactionrate, &con);
 }
 
 // init sensor figure
@@ -935,6 +936,321 @@ void sensorshow(mjrRect rect)
         width,
         rect.height / 3};
     mjr_figure(viewport, &figsensor, &con);
+}
+// init contact force figure
+void contactforceinit(void)
+{
+    mjv_defaultFigure(&figcontactforce);
+    figcontactforce.figurergba[3] = 0.5f;
+    figcontactforce.flg_extend = 1;  // don't auto-rescale
+    figcontactforce.flg_barplot = 0;  // line plot, not bar plot
+    figcontactforce.flg_legend = 1;  // show legend
+    figcontactforce.flg_ticklabel[0] = 1;  // show x-axis tick labels
+    figcontactforce.flg_ticklabel[1] = 1;  // show y-axis tick labels
+
+    strcpy(figcontactforce.title, "Contact Forces (Z-axis)");
+    strcpy(figcontactforce.xlabel, "Time (s)");
+    strcpy(figcontactforce.yformat, "%.0f");
+
+    figcontactforce.gridsize[0] = 5;
+    figcontactforce.gridsize[1] = 5;
+
+    figcontactforce.range[0][0] = 0;
+    figcontactforce.range[0][1] = 5;  // 5 seconds of history
+    figcontactforce.range[1][0] = 0;
+    figcontactforce.range[1][1] = 1000;
+
+    // set line colors and legends
+    // Line 0: Left foot - blue
+    figcontactforce.linergb[0][0] = 0.2f;
+    figcontactforce.linergb[0][1] = 0.5f;
+    figcontactforce.linergb[0][2] = 1.0f;
+    strcpy(figcontactforce.linename[0], "Left Foot");
+
+    // Line 1: Right foot - red
+    figcontactforce.linergb[1][0] = 1.0f;
+    figcontactforce.linergb[1][1] = 0.2f;
+    figcontactforce.linergb[1][2] = 0.2f;
+    strcpy(figcontactforce.linename[1], "Right Foot");
+
+    // initialize line data with negative x values
+    for (int i = 0; i < 10; i++) {
+        for (int j = 0; j < mjMAXLINEPNT; j++) {
+            figcontactforce.linedata[i][2*j] = (float)(-j * 0.01);
+            figcontactforce.linedata[i][2*j+1] = 0.0f;
+        }
+        figcontactforce.linepnt[i] = mjMAXLINEPNT;
+    }
+}
+
+// update contact force figure
+void contactforceupdate(void)
+{
+    const int maxpnt = mjMAXLINEPNT;
+
+    // 5초 슬라이딩 윈도우
+    double time_window = 5.0;
+    figcontactforce.range[0][0] = d->time - time_window;
+    figcontactforce.range[0][1] = d->time;
+
+    double contact_forces[2] = {0.0, 0.0};  // [0]=L_Foot_Link, [1]=R_Foot_Link
+
+    for (int i = 0; i < d->ncon; i++) {
+        const mjContact* c = &d->contact[i];
+
+        int body1 = m->geom_bodyid[c->geom1];
+        int body2 = m->geom_bodyid[c->geom2];
+        const char* bname1 = mj_id2name(m, mjOBJ_BODY, body1);
+        const char* bname2 = mj_id2name(m, mjOBJ_BODY, body2);
+
+        int line_idx = -1;
+
+        // body1 또는 body2가 L_Foot_Link / R_Foot_Link 인지 확인
+        for (int side = 0; side < 2; side++) {
+            const char* bn = (side == 0) ? bname1 : bname2;
+            if (!bn) continue;
+            if (strcmp(bn, "L_Foot_Link") == 0)      line_idx = 0;
+            else if (strcmp(bn, "R_Foot_Link") == 0) line_idx = 1;
+            if (line_idx >= 0) break;
+        }
+
+        if (line_idx < 0) continue;
+
+        // mj_contactForce: contact frame 기준 6D force [fx, fy, fz, tx, ty, tz]
+        // force_contact[0] = normal force (contact frame Z축, 법선 방향)
+        mjtNum force_contact[6];
+        mj_contactForce(m, d, i, force_contact);
+        contact_forces[line_idx] += mju_abs(force_contact[0]);
+    }
+
+    // 라인 0(Left), 1(Right) 만 업데이트
+    for (int n = 0; n < 2; n++) {
+        int pnt = mjMIN(maxpnt, figcontactforce.linepnt[n] + 1);
+        for (int i = pnt - 1; i > 0; i--) {
+            figcontactforce.linedata[n][2*i]   = figcontactforce.linedata[n][2*i - 2];
+            figcontactforce.linedata[n][2*i+1] = figcontactforce.linedata[n][2*i - 1];
+        }
+        figcontactforce.linedata[n][0] = (float)(d->time);
+        figcontactforce.linedata[n][1] = (float)(contact_forces[n]);
+        figcontactforce.linepnt[n] = pnt;
+    }
+}
+
+// show contact force figure
+void contactforceshow(mjrRect rect)
+{
+    int width = settings.profiler ? rect.width/3 : rect.width/4;
+
+    mjrRect viewport = {
+        rect.left + rect.width - width,
+        rect.bottom + rect.height/4,  // third position (3rd graph)
+        width,
+        rect.height/4
+    };
+    mjr_figure(viewport, &figcontactforce, &con);
+}
+
+// init action rate figure (for detecting vibrations)
+void actionrateinit(void)
+{
+    mjv_defaultFigure(&figactionrate);
+    figactionrate.figurergba[3] = 0.5f;
+    figactionrate.flg_extend = 1;  // don't auto-rescale
+    figactionrate.flg_barplot = 0;  // line plot, not bar plot
+    figactionrate.flg_symmetric = 1;  // symmetric y-axis around 0
+    figactionrate.flg_legend = 1;  // show legend
+    figactionrate.flg_ticklabel[0] = 1;  // show x-axis tick labels
+    figactionrate.flg_ticklabel[1] = 1;  // show y-axis tick labels
+
+    strcpy(figactionrate.title, "Action Rate (Vibration) - OK");
+    strcpy(figactionrate.xlabel, "Time (s)");
+    strcpy(figactionrate.yformat, "%.0f");  // Show integers for better readability
+
+    figactionrate.gridsize[0] = 5;
+    figactionrate.gridsize[1] = 5;
+
+    figactionrate.range[0][0] = 0;
+    figactionrate.range[0][1] = 5;  // 5 seconds of history
+    figactionrate.range[1][0] = -2000;  // Updated range to show values up to 2000
+    figactionrate.range[1][1] = 2000;
+
+    // set line colors (same as action graph for consistency)
+    const float colors[10][3] = {
+        {1.0f, 0.2f, 0.2f},  // red
+        {0.2f, 0.5f, 1.0f},  // blue
+        {0.2f, 1.0f, 0.2f},  // green
+        {1.0f, 1.0f, 0.2f},  // yellow
+        {1.0f, 0.2f, 1.0f},  // magenta
+        {0.2f, 1.0f, 1.0f},  // cyan
+        {1.0f, 0.6f, 0.2f},  // orange
+        {0.6f, 0.2f, 1.0f},  // purple
+        {0.5f, 0.5f, 0.5f},  // gray
+        {1.0f, 0.8f, 0.6f},  // tan
+    };
+
+    for (int i = 0; i < 10; i++) {
+        figactionrate.linergb[i][0] = colors[i][0];
+        figactionrate.linergb[i][1] = colors[i][1];
+        figactionrate.linergb[i][2] = colors[i][2];
+
+        // set default legend names
+        char name[30];
+        snprintf(name, sizeof(name), "Actuator %d Rate", i);
+        strcpy(figactionrate.linename[i], name);
+    }
+
+    // initialize line data with negative x values
+    for (int i = 0; i < 10; i++) {
+        for (int j = 0; j < mjMAXLINEPNT; j++) {
+            figactionrate.linedata[i][2*j] = (float)(-j * 0.01);
+            figactionrate.linedata[i][2*j+1] = 0.0f;
+        }
+        figactionrate.linepnt[i] = mjMAXLINEPNT;
+    }
+}
+
+// update action rate figure (derivative of actions)
+void actionrateupdate(void)
+{
+    static const int maxline = 10;
+    const int maxpnt = mjMAXLINEPNT;
+    static std::vector<double> ctrl_prev(maxline, 0.0);
+    static std::vector<double> rate_filtered(maxline, 0.0);  // filtered rate for smoothing
+    static double time_prev = 0.0;
+    static bool initialized = false;
+
+    // update time range (5 second sliding window)
+    double time_window = 5.0;
+    figactionrate.range[0][0] = d->time - time_window;
+    figactionrate.range[0][1] = d->time;
+
+    // compute time delta
+    double dt = d->time - time_prev;
+    if (dt < 1e-6) dt = m->opt.timestep;  // use model timestep if too small
+
+    // initialize on first call
+    if (!initialized) {
+        ctrl_prev.resize(m->nu, 0.0);
+        rate_filtered.resize(m->nu, 0.0);
+        for (int i = 0; i < m->nu; i++) {
+            ctrl_prev[i] = d->ctrl[i];
+            rate_filtered[i] = 0.0;
+        }
+        time_prev = d->time;
+        initialized = true;
+        return;
+    }
+
+    // Vibration detection thresholds
+    // Based on observations: ~1000 is fine, >1500 indicates vibration
+    const double VIBRATION_WARNING_THRESHOLD = 700.0;  // warning level (getting high)
+    const double VIBRATION_CRITICAL_THRESHOLD = 1300.0; // critical level (vibration occurs)
+
+    // Track vibrating actuators
+    bool has_warning = false;
+    bool has_critical = false;
+    char vibrating_actuators[256] = "";
+    int vibration_count = 0;
+
+    // update each actuator's rate line
+    int dim_action = mjMIN(m->nu, maxline);
+    for (int n = 0; n < dim_action; n++) {
+        // update legend with actuator name
+        const char* actuator_name = mj_id2name(m, mjOBJ_ACTUATOR, n);
+        if (actuator_name) {
+            char name[50];
+            snprintf(name, sizeof(name), "%s", actuator_name);
+            strcpy(figactionrate.linename[n], name);
+        }
+
+        // compute action rate (derivative)
+        double action_rate_raw = (d->ctrl[n] - ctrl_prev[n]) / dt;
+
+        // Apply simple exponential smoothing to reduce numerical noise
+        double alpha = 0.3;  // smoothing factor
+        double action_rate = alpha * action_rate_raw + (1.0 - alpha) * rate_filtered[n];
+        rate_filtered[n] = action_rate;
+
+        // Threshold very small rates to zero (reduces visual noise from numerical errors)
+        if (mju_abs(action_rate) < 0.1) {
+            action_rate = 0.0;
+        }
+
+        // Vibration detection
+        double abs_rate = mju_abs(action_rate);
+        if (abs_rate > VIBRATION_CRITICAL_THRESHOLD) {
+            has_critical = true;
+            if (vibration_count > 0) strncat(vibrating_actuators, ", ", sizeof(vibrating_actuators) - strlen(vibrating_actuators) - 1);
+            if (actuator_name) {
+                strncat(vibrating_actuators, actuator_name, sizeof(vibrating_actuators) - strlen(vibrating_actuators) - 1);
+            } else {
+                char idx[16];
+                snprintf(idx, sizeof(idx), "#%d", n);
+                strncat(vibrating_actuators, idx, sizeof(vibrating_actuators) - strlen(vibrating_actuators) - 1);
+            }
+            vibration_count++;
+        } else if (abs_rate > VIBRATION_WARNING_THRESHOLD) {
+            has_warning = true;
+        }
+
+        // shift existing data points backward
+        int pnt = mjMIN(maxpnt, figactionrate.linepnt[n] + 1);
+        for (int i = pnt - 1; i > 0; i--) {
+            figactionrate.linedata[n][2*i] = figactionrate.linedata[n][2*i - 2];
+            figactionrate.linedata[n][2*i + 1] = figactionrate.linedata[n][2*i - 1];
+        }
+
+        // add new data point at front
+        figactionrate.linedata[n][0] = (float)(d->time);
+        figactionrate.linedata[n][1] = (float)(action_rate);
+        figactionrate.linepnt[n] = pnt;
+
+        // save current control for next iteration
+        ctrl_prev[n] = d->ctrl[n];
+    }
+
+    // Update title based on vibration level
+    if (has_critical) {
+        char title[128];
+        snprintf(title, sizeof(title), "Action Rate - VIBRATION! [%s]", vibrating_actuators);
+        strcpy(figactionrate.title, title);
+        // Change background color to red for critical vibration
+        figactionrate.figurergba[0] = 0.8f;
+        figactionrate.figurergba[1] = 0.2f;
+        figactionrate.figurergba[2] = 0.2f;
+        figactionrate.figurergba[3] = 0.7f;
+    } else if (has_warning) {
+        strcpy(figactionrate.title, "Action Rate - Warning (High Rate)");
+        // Change background color to yellow for warning
+        figactionrate.figurergba[0] = 0.8f;
+        figactionrate.figurergba[1] = 0.8f;
+        figactionrate.figurergba[2] = 0.2f;
+        figactionrate.figurergba[3] = 0.6f;
+    } else {
+        strcpy(figactionrate.title, "Action Rate (Vibration) - OK");
+        // Normal background color
+        figactionrate.figurergba[0] = 0.2f;
+        figactionrate.figurergba[1] = 0.2f;
+        figactionrate.figurergba[2] = 0.2f;
+        figactionrate.figurergba[3] = 0.5f;
+    }
+
+    time_prev = d->time;
+}
+
+// show action rate figure
+void actionrateshow(mjrRect rect)
+{
+    int width = settings.profiler ? rect.width/3 : rect.width/4;
+
+    // Position on the right side, bottom third (same column as other performance graphs)
+    mjrRect viewport = {
+        rect.left + rect.width - width,  // right side
+        rect.bottom,                      // bottom
+        width,
+        rect.height/4
+    };
+    mjr_figure(viewport, &figactionrate, &con);
 }
 
 // prepare info text
@@ -2125,7 +2441,11 @@ void prepare(void)
 
     // update profiler
     if (settings.profiler && settings.run)
+    {
         profilerupdate();
+        contactforceupdate();
+        actionrateupdate();
+    }
 
     // update sensor
     if (settings.sensor && settings.run)
@@ -2255,7 +2575,6 @@ void simulate(void)
     // run until asked to exit
     while ((!settings.exitrequest) && ros::ok())
     {
-
         // sleep for 1 ms or yield, to let main thread run
         //  yield results in busy wait - which has better timing but kills battery life
         if (settings.run && settings.busywait)
@@ -2349,7 +2668,7 @@ void init()
 #endif
 
     // print version, check compatibility
-    printf("MuJoCo Pro version %.2lf\n", 0.01 * mj_version());
+    printf("MuJoCo version %s\n", mj_versionString());
     if (mjVERSION_HEADER != mj_version())
         mju_error("Headers and library have different versions");
 
@@ -2397,6 +2716,8 @@ void init()
 
     profilerinit();
     sensorinit();
+    contactforceinit();
+    actionrateinit();
 
     // make empty scene
     mjv_defaultScene(&scn);

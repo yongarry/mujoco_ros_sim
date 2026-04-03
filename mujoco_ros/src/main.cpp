@@ -8,6 +8,11 @@
 */
 
 #include "mjros.h"
+#include <fstream>
+#include <sstream>
+#include <map>
+#include <cmath>
+#include <ros/package.h>
 
 // drop file callback
 void drop(GLFWwindow *window, int count, const char **paths)
@@ -74,6 +79,60 @@ void loadmodel(void)
     if (m->actuator_biastype[0])
     {
         mju_copy(d->ctrl, m->key_qpos + 7 + i * m->nq, m->nu);
+    }
+
+    // ── CSV에서 cube 위치/yaw 읽어서 geom_pos/geom_mat 설정 ──
+    {
+        std::string csv_path = ros::package::getPath("tocabi_cc") + "/cmd/global_command.csv";
+        std::ifstream csv_file(csv_path);
+        if (!csv_file.is_open())
+            ROS_WARN("loadmodel: cannot open CSV: %s", csv_path.c_str());
+        else
+        {
+            std::map<std::string, std::vector<double>> csv;
+            std::string line;
+            while (std::getline(csv_file, line))
+            {
+                std::istringstream ss(line);
+                std::string token, key;
+                std::getline(ss, key, ',');
+                while (std::getline(ss, token, ','))
+                    if (!token.empty())
+                        csv[key].push_back(std::stod(token));
+            }
+
+            int n_cubes = (int)csv["posx"].size();
+            for (int ci = 0; ci < n_cubes; ci++)
+            {
+                std::string bname = "cube_" + (ci < 9 ? std::string("0") : std::string("")) + std::to_string(ci + 1);
+                int bid = mj_name2id(m, mjOBJ_BODY, bname.c_str());
+                if (bid < 0)
+                    continue;  // CSV 열이 cube 수보다 많을 경우 (예: 마지막 더미 스텝) 조용히 스킵
+
+                // mocap body 인덱스 = body의 mocap 순서 (m->body_mocapid)
+                int mid = m->body_mocapid[bid];
+                if (mid < 0)
+                {
+                    ROS_WARN("loadmodel: body '%s' is not a mocap body", bname.c_str());
+                    continue;
+                }
+
+                // mocap_pos/mocap_quat은 mjData에 저장 (월드 좌표 직접 지정)
+                d->mocap_pos[3*mid + 0] = csv["posx"][ci];
+                d->mocap_pos[3*mid + 1] = csv["posy"][ci];
+                d->mocap_pos[3*mid + 2] = csv["posz"][ci]-0.05;
+
+                // yaw(roty) → quaternion Rz(yaw): (w, x, y, z) = (cos(yaw/2), 0, 0, sin(yaw/2))
+                double yaw = csv["roty"][ci];
+                d->mocap_quat[4*mid + 0] = std::cos(yaw * 0.5);  // w
+                d->mocap_quat[4*mid + 1] = 0.0;                   // x
+                d->mocap_quat[4*mid + 2] = 0.0;                   // y
+                d->mocap_quat[4*mid + 3] = std::sin(yaw * 0.5);  // z
+
+                ROS_INFO("loadmodel: %s (mocap %d) -> pos(%.3f, %.3f, %.3f) yaw=%.3f",
+                         bname.c_str(), mid, csv["posx"][ci], csv["posy"][ci], csv["posz"][ci], yaw);
+            }
+        }
     }
 
     mj_forward(m, d);
