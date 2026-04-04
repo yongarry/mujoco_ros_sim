@@ -94,7 +94,7 @@ struct setting_
     int ui1 = 0;
     int help = 0;
     int info = 1;
-    int profiler = 0;
+    int profiler = 1;
     int sensor = 0;
     int fullscreen = 0;
     int vsync = 1;
